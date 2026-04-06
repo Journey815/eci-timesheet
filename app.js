@@ -218,9 +218,54 @@ function formatHours(h) {
   return parseFloat(h).toFixed(1) + 'h';
 }
 
+function to12h(time24) {
+  if (!time24) return '';
+  const [hStr, m] = time24.split(':');
+  let h = parseInt(hStr);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  if (h === 0) h = 12;
+  else if (h > 12) h -= 12;
+  return `${h}:${m}${ampm}`;
+}
+
 function formatTimeRange(startTime, endTime) {
-  if (startTime && endTime) return `${startTime}~${endTime}`;
+  if (startTime && endTime) return `${to12h(startTime)}~${to12h(endTime)}`;
   return '';
+}
+
+function getTimeFrom12h(hourSelect, minSelect, ampmSelect) {
+  const h = parseInt(hourSelect.value);
+  const m = minSelect.value;
+  const ampm = ampmSelect.value;
+  if (!h) return '';
+  let h24 = h;
+  if (ampm === 'AM' && h === 12) h24 = 0;
+  else if (ampm === 'PM' && h !== 12) h24 = h + 12;
+  return `${String(h24).padStart(2, '0')}:${m}`;
+}
+
+function setTimeTo12h(time24, hourSelect, minSelect, ampmSelect) {
+  if (!time24) return;
+  const [hStr, mStr] = time24.split(':');
+  let h = parseInt(hStr);
+  const m = mStr || '00';
+  let ampm = 'AM';
+  if (h === 0) { h = 12; ampm = 'AM'; }
+  else if (h === 12) { ampm = 'PM'; }
+  else if (h > 12) { h -= 12; ampm = 'PM'; }
+  hourSelect.value = String(h);
+  minSelect.value = m === '30' ? '30' : '00';
+  ampmSelect.value = ampm;
+}
+
+function buildHourOptions(selectEl) {
+  selectEl.innerHTML = '<option value="">시</option>';
+  for (let i = 1; i <= 12; i++) {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = String(i);
+    selectEl.appendChild(opt);
+  }
 }
 
 function calcHours(startTime, endTime) {
@@ -640,13 +685,21 @@ function renderEntryForm() {
   const dateInput = document.getElementById('entry-date');
   const categoryInput = document.getElementById('entry-category');
   const categoryList = document.getElementById('category-list');
-  const startTimeInput = document.getElementById('entry-start-time');
-  const endTimeInput = document.getElementById('entry-end-time');
+  const startHour = document.getElementById('entry-start-hour');
+  const startMin = document.getElementById('entry-start-min');
+  const startAmpm = document.getElementById('entry-start-ampm');
+  const endHour = document.getElementById('entry-end-hour');
+  const endMin = document.getElementById('entry-end-min');
+  const endAmpm = document.getElementById('entry-end-ampm');
   const hoursDisplay = document.getElementById('entry-hours-display');
   const descInput = document.getElementById('entry-description');
   const addBtn = document.getElementById('btn-add-entry');
   const submitBtn = document.getElementById('btn-submit-entries');
   const form = document.getElementById('entry-form');
+
+  // Populate hour selects (1–12)
+  buildHourOptions(startHour);
+  buildHourOptions(endHour);
 
   // Set default date
   dateInput.value = today();
@@ -661,29 +714,30 @@ function renderEntryForm() {
 
   // Auto-calculate hours from start/end time
   function updateHoursDisplay() {
-    const start = startTimeInput.value;
-    const end = endTimeInput.value;
+    const start = getTimeFrom12h(startHour, startMin, startAmpm);
+    const end = getTimeFrom12h(endHour, endMin, endAmpm);
     if (start && end) {
       const h = calcHours(start, end);
-      hoursDisplay.innerHTML = `시간: <strong>${h.toFixed(1)}h</strong>`;
+      hoursDisplay.innerHTML = `소요: <strong>${h.toFixed(1)}h</strong>`;
     } else {
-      hoursDisplay.innerHTML = '시간: <strong>0.0h</strong>';
+      hoursDisplay.innerHTML = '소요: <strong>0.0h</strong>';
     }
   }
-  startTimeInput.addEventListener('change', updateHoursDisplay);
-  endTimeInput.addEventListener('change', updateHoursDisplay);
+  [startHour, startMin, startAmpm, endHour, endMin, endAmpm].forEach(el => {
+    el.addEventListener('change', updateHoursDisplay);
+  });
 
   addBtn.addEventListener('click', () => {
     const date = dateInput.value;
     const category = categoryInput.value.trim();
-    const startTime = startTimeInput.value;
-    const endTime = endTimeInput.value;
+    const startTime = getTimeFrom12h(startHour, startMin, startAmpm);
+    const endTime = getTimeFrom12h(endHour, endMin, endAmpm);
     const description = descInput.value.trim();
 
     if (!date) { showToast('날짜를 선택해주세요.', 'warning'); return; }
-    if (!startTime || !endTime) { showToast('시작/종료 시간을 입력해주세요.', 'warning'); startTimeInput.focus(); return; }
+    if (!startTime || !endTime) { showToast('시작/종료 시간을 입력해주세요.', 'warning'); startHour.focus(); return; }
     const hours = calcHours(startTime, endTime);
-    if (hours <= 0) { showToast('종료 시간이 시작 시간보다 뒤여야 합니다.', 'warning'); endTimeInput.focus(); return; }
+    if (hours <= 0) { showToast('종료 시간이 시작 시간보다 뒤여야 합니다.', 'warning'); endHour.focus(); return; }
     if (!category) { showToast('카테고리를 입력해주세요.', 'warning'); categoryInput.focus(); return; }
     if (!description) { showToast('업무 내용을 입력해주세요.', 'warning'); descInput.focus(); return; }
 
@@ -708,8 +762,12 @@ function renderEntryForm() {
     renderDraftList();
     descInput.value = '';
     categoryInput.value = '';
-    startTimeInput.value = '';
-    endTimeInput.value = '';
+    startHour.value = '';
+    startMin.value = '00';
+    startAmpm.value = 'AM';
+    endHour.value = '';
+    endMin.value = '00';
+    endAmpm.value = 'AM';
     updateHoursDisplay();
     descInput.focus();
     showToast('추가되었습니다.', 'success', 1500);
@@ -1013,34 +1071,68 @@ function createRecordRow(entry, table, container, allCurrentEntries) {
   function renderEditMode() {
     const catListId = `edit-cat-list-${entry.id}`;
     const catDatalist = STATE.categories.map(c => `<option value="${c}">`).join('');
+    const uid = entry.id;
+
+    // Build hour options html
+    let hourOpts = '<option value="">시</option>';
+    for (let i = 1; i <= 12; i++) hourOpts += `<option value="${i}">${i}</option>`;
 
     tr.innerHTML = `
-      <td><input class="edit-input" type="time" value="${entry.startTime || ''}" style="width:90px" data-field="start">
-          <input class="edit-input" type="time" value="${entry.endTime || ''}" style="width:90px" data-field="end"></td>
+      <td style="white-space:nowrap">
+        <div class="time-picker" style="flex-wrap:wrap;gap:2px">
+          <select class="edit-input time-select" data-field="sH" style="min-width:44px;padding:4px 2px">${hourOpts}</select>
+          <span class="time-sep" style="font-size:0.9rem">:</span>
+          <select class="edit-input time-select" data-field="sM" style="min-width:44px;padding:4px 2px">
+            <option value="00">00</option><option value="30">30</option>
+          </select>
+          <select class="edit-input time-select ampm-select" data-field="sAP" style="min-width:48px;padding:4px 2px">
+            <option value="AM">AM</option><option value="PM">PM</option>
+          </select>
+        </div>
+        <div class="time-picker" style="flex-wrap:wrap;gap:2px;margin-top:4px">
+          <select class="edit-input time-select" data-field="eH" style="min-width:44px;padding:4px 2px">${hourOpts}</select>
+          <span class="time-sep" style="font-size:0.9rem">:</span>
+          <select class="edit-input time-select" data-field="eM" style="min-width:44px;padding:4px 2px">
+            <option value="00">00</option><option value="30">30</option>
+          </select>
+          <select class="edit-input time-select ampm-select" data-field="eAP" style="min-width:48px;padding:4px 2px">
+            <option value="AM">AM</option><option value="PM">PM</option>
+          </select>
+        </div>
+      </td>
       <td><input class="edit-input" type="text" list="${catListId}" value="${escapeHtml(entry.category)}" style="width:100%" data-field="cat"><datalist id="${catListId}">${catDatalist}</datalist></td>
       <td><input class="edit-input" type="text" value="${escapeHtml(entry.description)}" style="width:100%;min-width:140px" data-field="desc"></td>
-      <td class="td-hours" id="edit-hours-${entry.id}">-</td>
+      <td class="td-hours" id="edit-hours-${uid}">-</td>
       <td class="td-actions"><div class="edit-actions-cell">
         <button class="btn-save-edit">저장</button>
         <button class="btn-cancel-edit">취소</button>
       </div></td>`;
 
-    const startInput = tr.querySelector('[data-field="start"]');
-    const endInput = tr.querySelector('[data-field="end"]');
-    const hoursCell = document.getElementById(`edit-hours-${entry.id}`);
+    const sH = tr.querySelector('[data-field="sH"]');
+    const sM = tr.querySelector('[data-field="sM"]');
+    const sAP = tr.querySelector('[data-field="sAP"]');
+    const eH = tr.querySelector('[data-field="eH"]');
+    const eM = tr.querySelector('[data-field="eM"]');
+    const eAP = tr.querySelector('[data-field="eAP"]');
+    const hoursCell = document.getElementById(`edit-hours-${uid}`);
+
+    // Pre-fill existing times
+    if (entry.startTime) setTimeTo12h(entry.startTime, sH, sM, sAP);
+    if (entry.endTime) setTimeTo12h(entry.endTime, eH, eM, eAP);
 
     function updateEditHours() {
-      if (startInput.value && endInput.value) {
-        hoursCell.textContent = calcHours(startInput.value, endInput.value).toFixed(1) + 'h';
+      const newStart = getTimeFrom12h(sH, sM, sAP);
+      const newEnd = getTimeFrom12h(eH, eM, eAP);
+      if (newStart && newEnd) {
+        hoursCell.textContent = calcHours(newStart, newEnd).toFixed(1) + 'h';
       }
     }
-    startInput.addEventListener('change', updateEditHours);
-    endInput.addEventListener('change', updateEditHours);
+    [sH, sM, sAP, eH, eM, eAP].forEach(el => el.addEventListener('change', updateEditHours));
     updateEditHours();
 
     tr.querySelector('.btn-save-edit').addEventListener('click', async () => {
-      const newStartTime = startInput.value;
-      const newEndTime = endInput.value;
+      const newStartTime = getTimeFrom12h(sH, sM, sAP);
+      const newEndTime = getTimeFrom12h(eH, eM, eAP);
       const newHours = (newStartTime && newEndTime) ? calcHours(newStartTime, newEndTime) : parseFloat(entry.hours);
       const newCat = tr.querySelector('[data-field="cat"]').value.trim();
       const newDesc = tr.querySelector('[data-field="desc"]').value.trim();
@@ -1867,37 +1959,72 @@ function renderMembersTab() {
   const section = document.createElement('div');
   section.className = 'admin-section';
 
+  // Header
   const header = document.createElement('div');
   header.className = 'admin-section-header';
   header.innerHTML = '<h2>인원 목록</h2>';
   section.appendChild(header);
 
-  const list = document.createElement('div');
-  list.className = 'member-mgmt-list';
+  // Table
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'admin-table-wrap';
+  const table = document.createElement('table');
+  table.className = 'admin-table';
+  table.style.minWidth = '750px';
+  table.innerHTML = `<thead><tr>
+    <th>이름</th>
+    <th>직군</th>
+    <th>이메일</th>
+    <th>소속</th>
+    <th class="num-cell">Hourly Rate</th>
+    <th style="text-align:center">상태</th>
+    <th style="text-align:center">관리</th>
+  </tr></thead>`;
+  const tbody = document.createElement('tbody');
 
   STATE.members.forEach((m, idx) => {
-    const row = document.createElement('div');
-    row.className = `member-mgmt-row ${m.active ? '' : 'member-inactive'}`;
-    row.innerHTML = `
-      <span class="member-name">${escapeHtml(m.name)}</span>
-      <span class="member-role-badge">${escapeHtml(m.role)}</span>
-      <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
-        <label style="font-size:0.78rem;color:var(--text-muted)">Hourly Rate</label>
-        <input type="number" class="rate-input" value="${m.rate}" min="0" step="1000" data-idx="${idx}">
-        <button class="btn-toggle-active ${m.active ? 'active-btn' : ''}" data-idx="${idx}">${m.active ? '활성' : '비활성'}</button>
-      </div>`;
-    list.appendChild(row);
+    const tr = document.createElement('tr');
+    tr.className = m.active ? '' : 'member-inactive';
+    tr.innerHTML = `
+      <td>
+        <input class="edit-input" type="text" value="${escapeHtml(m.name)}" data-field="name" data-idx="${idx}" style="width:80px;font-weight:600">
+      </td>
+      <td>
+        <input class="edit-input" type="text" value="${escapeHtml(m.role)}" data-field="role" data-idx="${idx}" style="width:70px">
+      </td>
+      <td>
+        <input class="edit-input" type="email" value="${escapeHtml(m.email || '')}" data-field="email" data-idx="${idx}" style="width:140px">
+      </td>
+      <td>
+        <select class="edit-input" data-field="dept" data-idx="${idx}" style="width:110px;padding:4px 6px;font-size:0.82rem">
+          <option value="">미배정</option>
+          ${STATE.departments.map(d => `<option value="${escapeHtml(d.name)}" ${m.department === d.name ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}
+        </select>
+      </td>
+      <td class="num-cell">
+        <input type="number" class="rate-input" value="${m.rate}" min="0" step="1000" data-idx="${idx}" style="width:90px">
+      </td>
+      <td style="text-align:center">
+        <button class="btn-toggle-active ${m.active ? 'active-btn' : ''}" data-idx="${idx}" style="white-space:nowrap">${m.active ? '활성' : '비활성'}</button>
+      </td>
+      <td style="text-align:center">
+        <button class="btn-icon btn-save-member" title="저장" data-idx="${idx}">💾</button>
+        <button class="btn-icon btn-delete-member" title="삭제" data-idx="${idx}" style="color:var(--danger)">🗑</button>
+      </td>`;
+    tbody.appendChild(tr);
   });
 
-  section.appendChild(list);
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
 
   // Rate change
-  list.querySelectorAll('.rate-input').forEach(input => {
+  tbody.querySelectorAll('.rate-input').forEach(input => {
     input.addEventListener('change', async () => {
       const idx = parseInt(input.dataset.idx);
       const newRate = parseFloat(input.value) || 0;
       STATE.members[idx].rate = newRate;
-      if (!CONFIG.API_URL) { showToast('요율이 업데이트되었습니다. (데모 모드)', 'success', 1500); return; }
+      if (!CONFIG.API_URL) { showToast('요율이 업데이트되었습니다. (데모 모드)', 'success', 1500); renderKPICards(); renderMemberSummaryTable(); return; }
       showLoading();
       try {
         await apiPost('updateRate', { name: STATE.members[idx].name, hourlyRate: newRate });
@@ -1910,7 +2037,7 @@ function renderMembersTab() {
   });
 
   // Toggle active
-  list.querySelectorAll('.btn-toggle-active').forEach(btn => {
+  tbody.querySelectorAll('.btn-toggle-active').forEach(btn => {
     btn.addEventListener('click', async () => {
       const idx = parseInt(btn.dataset.idx);
       STATE.members[idx].active = !STATE.members[idx].active;
@@ -1925,12 +2052,83 @@ function renderMembersTab() {
     });
   });
 
+  // Save member (name/role/email/dept)
+  tbody.querySelectorAll('.btn-save-member').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.idx);
+      const row = tbody.querySelectorAll('tr')[idx];
+      const newName = row.querySelector('[data-field="name"]').value.trim();
+      const newRole = row.querySelector('[data-field="role"]').value.trim();
+      const newEmail = row.querySelector('[data-field="email"]').value.trim();
+      const newDept = row.querySelector('[data-field="dept"]').value;
+      if (!newName || !newRole) { showToast('이름과 직군을 입력해주세요.', 'warning'); return; }
+
+      const oldName = STATE.members[idx].name;
+      STATE.members[idx].name = newName;
+      STATE.members[idx].role = newRole;
+      STATE.members[idx].email = newEmail;
+      STATE.members[idx].department = newDept;
+
+      if (!CONFIG.API_URL) {
+        showToast('저장되었습니다. (데모 모드)', 'success', 1500);
+        renderMembersTab();
+        renderMemberSummaryTable();
+        return;
+      }
+      showLoading();
+      try {
+        await apiPost('updateMember', { name: oldName, newName, role: newRole, email: newEmail, department: newDept });
+        showToast('저장되었습니다.', 'success', 1500);
+        renderMembersTab();
+        renderMemberSummaryTable();
+      } catch (err) { showToast(`저장 실패: ${err.message}`, 'error'); }
+      finally { hideLoading(); }
+    });
+  });
+
+  // Delete member
+  tbody.querySelectorAll('.btn-delete-member').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.idx);
+      const m = STATE.members[idx];
+      const ok = await showConfirm('인원 삭제', `"${m.name}"을(를) 삭제하시겠습니까?\n관련 데이터는 유지됩니다.`, '삭제', true);
+      if (!ok) return;
+
+      if (!CONFIG.API_URL) {
+        STATE.members.splice(idx, 1);
+        showToast('삭제되었습니다. (데모 모드)', 'success', 1500);
+        renderMembersTab();
+        renderMemberSummaryTable();
+        return;
+      }
+      showLoading();
+      try {
+        await apiPost('deleteMember', { name: m.name });
+        const membersRes = await apiGet('getMembers');
+        if (Array.isArray(membersRes)) {
+          STATE.members = membersRes.map(r => ({ name: r.name, role: r.role, rate: r.hourlyRate || 0, active: r.isActive !== false, department: r.department || '', email: r.email || '' }));
+        }
+        showToast('삭제되었습니다.', 'success', 1500);
+        renderMembersTab();
+        renderMemberSummaryTable();
+      } catch (err) { showToast(`삭제 실패: ${err.message}`, 'error'); }
+      finally { hideLoading(); }
+    });
+  });
+
   // Add member form
   const addForm = document.createElement('div');
   addForm.className = 'add-member-form';
   addForm.innerHTML = `
     <div class="form-group"><label class="form-label">이름</label><input type="text" class="form-control" id="new-member-name" placeholder="홍길동"></div>
     <div class="form-group"><label class="form-label">직군</label><input type="text" class="form-control" id="new-member-role" placeholder="기획"></div>
+    <div class="form-group"><label class="form-label">이메일</label><input type="email" class="form-control" id="new-member-email" placeholder="user@example.com"></div>
+    <div class="form-group"><label class="form-label">소속</label>
+      <select class="form-control" id="new-member-dept">
+        <option value="">미배정</option>
+        ${STATE.departments.map(d => `<option value="${escapeHtml(d.name)}">${escapeHtml(d.name)}</option>`).join('')}
+      </select>
+    </div>
     <div class="form-group"><label class="form-label">Hourly Rate</label><input type="number" class="form-control" id="new-member-rate" placeholder="30000" min="0" step="1000"></div>
     <button class="btn-add-member" id="btn-add-member">+ 인원 추가</button>`;
   section.appendChild(addForm);
@@ -1938,22 +2136,24 @@ function renderMembersTab() {
   document.getElementById('btn-add-member').addEventListener('click', async () => {
     const name = document.getElementById('new-member-name').value.trim();
     const role = document.getElementById('new-member-role').value.trim();
+    const email = document.getElementById('new-member-email').value.trim();
+    const dept = document.getElementById('new-member-dept').value;
     const rate = parseFloat(document.getElementById('new-member-rate').value) || 0;
     if (!name || !role) { showToast('이름과 직군을 입력해주세요.', 'warning'); return; }
     if (STATE.members.find(m => m.name === name)) { showToast('이미 존재하는 이름입니다.', 'warning'); return; }
 
     if (!CONFIG.API_URL) {
-      STATE.members.push({ name, role, rate, active: true });
+      STATE.members.push({ name, role, rate, active: true, email, department: dept });
       showToast('인원이 추가되었습니다. (데모 모드)', 'success', 1500);
       renderMembersTab();
       return;
     }
     showLoading();
     try {
-      await apiPost('addMember', { name, role, hourlyRate: rate });
+      await apiPost('addMember', { name, role, hourlyRate: rate, email, department: dept });
       const membersRes = await apiGet('getMembers');
       if (Array.isArray(membersRes)) {
-        STATE.members = membersRes.map(m => ({ name: m.name, role: m.role, rate: m.hourlyRate || 0, active: m.isActive !== false }));
+        STATE.members = membersRes.map(r => ({ name: r.name, role: r.role, rate: r.hourlyRate || 0, active: r.isActive !== false, department: r.department || '', email: r.email || '' }));
       }
       showToast('인원이 추가되었습니다.', 'success', 1500);
       renderMembersTab();
@@ -2269,6 +2469,19 @@ function renderDepartmentsTab() {
   deptSection.className = 'admin-section';
   deptSection.innerHTML = `<div class="admin-section-header"><h2>소속 목록</h2></div>`;
 
+  // Count members per department
+  function getMemberCount(deptName) {
+    return STATE.members.filter(m => m.active && m.department === deptName).length;
+  }
+
+  // Build active member options for approver dropdown
+  function approverOptions(selectedName) {
+    return STATE.members
+      .filter(m => m.active)
+      .map(m => `<option value="${escapeHtml(m.name)}" ${m.name === selectedName ? 'selected' : ''}>${escapeHtml(m.name)} (${escapeHtml(m.role)})</option>`)
+      .join('');
+  }
+
   if (STATE.departments.length === 0) {
     deptSection.innerHTML += `<div class="empty-state" style="padding:20px">등록된 소속이 없습니다.</div>`;
   } else {
@@ -2276,17 +2489,72 @@ function renderDepartmentsTab() {
     wrap.className = 'admin-table-wrap';
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = `<thead><tr><th>소속명</th><th>승인자</th><th>승인자 이메일</th><th style="width:80px">관리</th></tr></thead>`;
+    table.style.minWidth = '600px';
+    table.innerHTML = `<thead><tr>
+      <th>소속명</th>
+      <th>승인자</th>
+      <th>승인자 이메일</th>
+      <th class="num-cell">인원수</th>
+      <th style="text-align:center;width:80px">관리</th>
+    </tr></thead>`;
     const tbody = document.createElement('tbody');
 
-    STATE.departments.forEach(dept => {
+    STATE.departments.forEach((dept, dIdx) => {
+      const count = getMemberCount(dept.name);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${escapeHtml(dept.name)}</strong></td>
-        <td>${escapeHtml(dept.approverName)}</td>
-        <td>${escapeHtml(dept.approverEmail)}</td>
-        <td><button class="btn-icon" title="삭제" data-dept="${escapeHtml(dept.name)}">🗑</button></td>`;
-      tr.querySelector('.btn-icon').addEventListener('click', async () => {
+        <td>
+          <select class="edit-input dept-approver-select" data-didx="${dIdx}" style="padding:4px 6px;font-size:0.82rem;width:160px">
+            <option value="">선택</option>
+            ${approverOptions(dept.approverName)}
+          </select>
+        </td>
+        <td>
+          <input class="edit-input dept-email-input" type="email" value="${escapeHtml(dept.approverEmail || '')}" data-didx="${dIdx}" style="width:180px">
+        </td>
+        <td class="num-cell">
+          <span class="tag ${count > 0 ? 'tag-blue' : 'tag-gray'}">${count}명</span>
+        </td>
+        <td style="text-align:center;white-space:nowrap">
+          <button class="btn-icon btn-save-dept" title="저장" data-didx="${dIdx}">💾</button>
+          <button class="btn-icon btn-delete-dept" title="삭제" data-didx="${dIdx}" style="color:var(--danger)">🗑</button>
+        </td>`;
+
+      // Auto-fill email when approver changes
+      tr.querySelector('.dept-approver-select').addEventListener('change', function() {
+        const selName = this.value;
+        const member = STATE.members.find(m => m.name === selName);
+        if (member && member.email) {
+          tr.querySelector('.dept-email-input').value = member.email;
+        }
+      });
+
+      // Save department
+      tr.querySelector('.btn-save-dept').addEventListener('click', async () => {
+        const approverName = tr.querySelector('.dept-approver-select').value;
+        const approverEmail = tr.querySelector('.dept-email-input').value.trim();
+        if (!approverName) { showToast('승인자를 선택해주세요.', 'warning'); return; }
+
+        STATE.departments[dIdx].approverName = approverName;
+        STATE.departments[dIdx].approverEmail = approverEmail;
+
+        if (!CONFIG.API_URL) {
+          showToast('저장되었습니다. (데모 모드)', 'success', 1500);
+          renderDepartmentsTab();
+          return;
+        }
+        showLoading();
+        try {
+          await apiPost('updateDepartment', { name: dept.name, approverName, approverEmail });
+          showToast('저장되었습니다.', 'success', 1500);
+          renderDepartmentsTab();
+        } catch (err) { showToast(`저장 실패: ${err.message}`, 'error'); }
+        finally { hideLoading(); }
+      });
+
+      // Delete department
+      tr.querySelector('.btn-delete-dept').addEventListener('click', async () => {
         const ok = await showConfirm('소속 삭제', `"${dept.name}" 소속을 삭제하시겠습니까?`, '삭제', true);
         if (!ok) return;
         if (!CONFIG.API_URL) {
@@ -2305,6 +2573,7 @@ function renderDepartmentsTab() {
         } catch (err) { showToast(`삭제 실패: ${err.message}`, 'error'); }
         finally { hideLoading(); }
       });
+
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -2319,15 +2588,24 @@ function renderDepartmentsTab() {
     <div class="form-group"><label class="form-label">소속명</label><input type="text" class="form-control" id="new-dept-name" placeholder="Design"></div>
     <div class="form-group"><label class="form-label">승인자</label>
       <select class="form-control" id="new-dept-approver">
-        <option value="">선택</option>
+        <option value="">선택 (활성 인원만)</option>
         ${STATE.members.filter(m => m.active).map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${escapeHtml(m.role)})</option>`).join('')}
       </select>
     </div>
-    <div class="form-group"><label class="form-label">승인자 이메일</label><input type="email" class="form-control" id="new-dept-email" placeholder="approver@example.com"></div>
+    <div class="form-group"><label class="form-label">승인자 이메일</label><input type="email" class="form-control" id="new-dept-email" placeholder="자동 입력 또는 직접 입력"></div>
     <button class="btn-add-member" id="btn-add-dept">+ 소속 추가</button>`;
   deptSection.appendChild(addForm);
 
-  document.getElementById('btn-add-dept')?.addEventListener('click', async () => {
+  // Auto-fill email when approver is selected in add form
+  document.getElementById('new-dept-approver').addEventListener('change', function() {
+    const selName = this.value;
+    const member = STATE.members.find(m => m.name === selName);
+    if (member && member.email) {
+      document.getElementById('new-dept-email').value = member.email;
+    }
+  });
+
+  document.getElementById('btn-add-dept').addEventListener('click', async () => {
     const name = document.getElementById('new-dept-name').value.trim();
     const approverName = document.getElementById('new-dept-approver').value;
     const approverEmail = document.getElementById('new-dept-email').value.trim();
@@ -2336,7 +2614,7 @@ function renderDepartmentsTab() {
 
     if (!CONFIG.API_URL) {
       STATE.departments.push({ name, approverName, approverEmail });
-      showToast('소속이 추가되었습니다.', 'success', 1500);
+      showToast('소속이 추가되었습니다. (데모 모드)', 'success', 1500);
       renderDepartmentsTab();
       return;
     }

@@ -174,17 +174,43 @@
               </datalist>
             </div>
           </div>
-          <div class="form-row form-row-4">
+          <div class="form-row time-row">
             <div class="form-group">
-              <label class="form-label" for="entry-start-time">시작</label>
-              <input type="time" class="form-control" id="entry-start-time" step="1800">
+              <label class="form-label">시작</label>
+              <div class="time-picker" id="start-time-picker">
+                <select class="form-control time-select" id="entry-start-hour">
+                  <option value="">시</option>
+                </select>
+                <span class="time-sep">:</span>
+                <select class="form-control time-select" id="entry-start-min">
+                  <option value="00">00</option>
+                  <option value="30">30</option>
+                </select>
+                <select class="form-control time-select ampm-select" id="entry-start-ampm">
+                  <option value="AM">AM</option>
+                  <option value="PM">PM</option>
+                </select>
+              </div>
             </div>
             <div class="form-group">
-              <label class="form-label" for="entry-end-time">종료</label>
-              <input type="time" class="form-control" id="entry-end-time" step="1800">
+              <label class="form-label">종료</label>
+              <div class="time-picker" id="end-time-picker">
+                <select class="form-control time-select" id="entry-end-hour">
+                  <option value="">시</option>
+                </select>
+                <span class="time-sep">:</span>
+                <select class="form-control time-select" id="entry-end-min">
+                  <option value="00">00</option>
+                  <option value="30">30</option>
+                </select>
+                <select class="form-control time-select ampm-select" id="entry-end-ampm">
+                  <option value="AM">AM</option>
+                  <option value="PM">PM</option>
+                </select>
+              </div>
             </div>
-            <div class="form-group">
-              <label class="form-label" id="entry-hours-display">시간: <strong>0.0h</strong></label>
+            <div class="form-group time-display-group">
+              <label class="form-label" id="entry-hours-display">소요: <strong>0.0h</strong></label>
             </div>
           </div>
           <div class="form-row">

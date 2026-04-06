@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ECI 시수관리 시스템</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- SheetJS for Excel export -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<!-- ============================================================
+     LOADING OVERLAY
+     ============================================================ -->
+<div class="loading-overlay" id="loading-overlay" role="status" aria-label="로딩 중">
+  <div class="spinner"></div>
+</div>
+
+<!-- ============================================================
+     TOAST CONTAINER
+     ============================================================ -->
+<div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+<!-- ============================================================
+     CONFIRM MODAL
+     ============================================================ -->
+<div class="modal-backdrop" id="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal">
+    <h3 id="modal-title">확인</h3>
+    <p id="modal-message">계속하시겠습니까?</p>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="modal-cancel-btn">취소</button>
+      <button class="btn-danger" id="modal-confirm-btn">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MEMBER DETAIL MODAL
+     ============================================================ -->
+<div class="modal-backdrop" id="detail-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title">
+  <div class="modal detail-modal">
+    <h3 id="detail-modal-title">상세 정보</h3>
+    <div id="detail-modal-body"></div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn-secondary" id="detail-modal-close">닫기</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ============================================================
+     VIEW 1: LOGIN
+     ============================================================ -->
+<div class="view active" id="view-login">
+  <div class="login-card">
+    <div class="login-logo">⏱</div>
+    <h1 class="login-title">ECI 시수관리 시스템</h1>
+    <p class="login-subtitle">프로젝트 시수 기록 및 인건비 관리</p>
+
+    <!-- Setup notice (shown when API_URL is empty) -->
+    <div class="setup-notice" id="login-setup-notice" style="display:none">
+      <h3>초기 설정 필요</h3>
+      <p>
+        Google Apps Script를 배포한 후 <code>app.js</code>의
+        <code>CONFIG.API_URL</code>에 웹 앱 URL을 입력해주세요.<br><br>
+        현재 <strong>데모 모드</strong>로 동작합니다.<br>
+        비밀번호 <code>admin</code> → 관리자, 그 외 → 일반 사용자
+      </p>
+    </div>
+
+    <!-- Login form -->
+    <div id="login-form-section">
+      <form class="login-form" id="login-form" autocomplete="off">
+        <div class="form-group">
+          <label for="login-password">비밀번호</label>
+          <input
+            type="password"
+            id="login-password"
+            placeholder="비밀번호를 입력하세요"
+            autocomplete="current-password"
+            autofocus
+          >
+        </div>
+        <button type="submit" class="btn-login">접속하기</button>
+      </form>
+      <div class="login-error" id="login-error" role="alert"></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ============================================================
+     VIEW 2: USER SELECT
+     ============================================================ -->
+<div class="view" id="view-user-select">
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-logo">⏱</div>
+    <span class="header-title">ECI 시수관리</span>
+    <button class="btn-logout" id="user-select-logout">로그아웃</button>
+  </header>
+
+  <!-- Body -->
+  <div class="view-body" style="max-width:480px">
+    <h2 class="section-heading">이름을 선택하세요</h2>
+    <p class="section-subheading">본인 이름을 선택한 후 시작하기 버튼을 눌러주세요.</p>
+
+    <!-- Search -->
+    <div class="search-input-wrap">
+      <span class="icon-search">🔍</span>
+      <input
+        type="search"
+        id="user-search"
+        placeholder="이름으로 검색..."
+        autocomplete="off"
+      >
+    </div>
+
+    <!-- Member radio list -->
+    <ul class="member-list" id="member-radio-list" role="radiogroup" aria-label="팀원 목록">
+      <!-- Rendered by JS -->
+    </ul>
+
+    <button class="btn-start" id="btn-start" disabled>시작하기</button>
+  </div>
+</div>
+
+
+<!-- ============================================================
+     VIEW 3+4: ENTRY + RECORDS (user view)
+     ============================================================ -->
+<div class="view" id="view-entry">
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-logo">⏱</div>
+    <span class="header-title" id="entry-user-name">사용자님</span>
+    <button class="btn-logout" id="entry-logout">로그아웃</button>
+  </header>
+
+  <!-- Tab bar -->
+  <nav class="tab-bar" role="tablist">
+    <button class="tab-btn active" id="tab-entry" role="tab" aria-selected="true" aria-controls="entry-form-section">시수입력</button>
+    <button class="tab-btn" id="tab-records" role="tab" aria-selected="false" aria-controls="records-section">내 기록</button>
+    <button class="tab-btn" id="tab-approval" role="tab" aria-selected="false" aria-controls="approval-section" style="display:none">승인 대기 <span class="badge" id="pending-badge"></span></button>
+  </nav>
+
+  <!-- Entry form section -->
+  <div id="entry-form-section">
+    <div class="view-body">
+
+      <!-- Input Form Card -->
+      <div class="entry-card">
+        <h2><span class="card-icon">✏️</span>시수 입력</h2>
+        <form id="entry-form">
+          <div class="form-row form-row-2">
+            <div class="form-group">
+              <label class="form-label" for="entry-date">날짜</label>
+              <input type="date" class="form-control" id="entry-date">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="entry-category">카테고리</label>
+              <input
+                type="text"
+                class="form-control"
+                id="entry-category"
+                list="category-list"
+                placeholder="선택 또는 직접 입력"
+                autocomplete="off"
+              >
+              <datalist id="category-list">
+                <!-- Populated by JS -->
+              </datalist>
+            </div>
+          </div>
+          <div class="form-row form-row-4">
+            <div class="form-group">
+              <label class="form-label" for="entry-start-time">시작</label>
+              <input type="time" class="form-control" id="entry-start-time" step="1800">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="entry-end-time">종료</label>
+              <input type="time" class="form-control" id="entry-end-time" step="1800">
+            </div>
+            <div class="form-group">
+              <label class="form-label" id="entry-hours-display">시간: <strong>0.0h</strong></label>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex:1">
+              <label class="form-label" for="entry-description">업무 내용</label>
+              <input
+                type="text"
+                class="form-control"
+                id="entry-description"
+                placeholder="업무 내용을 입력하세요"
+                autocomplete="off"
+              >
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn-add" id="btn-add-entry">+ 추가</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Draft entries -->
+      <div class="entry-card">
+        <h2><span class="card-icon">📋</span>오늘 입력 목록</h2>
+        <div id="draft-entries-container">
+          <!-- Rendered by JS -->
+        </div>
+        <div id="submitted-entries-notice" style="display:none;margin-top:10px"></div>
+        <div class="submit-section" style="margin-top:14px">
+          <button class="btn-submit" id="btn-submit-entries" disabled>제출하기</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Records section -->
+  <div id="records-section" style="display:none">
+    <div class="view-body">
+
+      <!-- Filters -->
+      <div class="records-filters">
+        <select id="records-period" aria-label="기간 선택">
+          <option value="week">이번 주</option>
+          <option value="month">이번 달</option>
+          <option value="all">전체</option>
+        </select>
+        <select id="records-category" aria-label="카테고리 선택">
+          <option value="전체">전체 카테고리</option>
+        </select>
+      </div>
+
+      <!-- Records groups -->
+      <div id="records-container">
+        <!-- Rendered by JS -->
+      </div>
+
+      <!-- Period total -->
+      <div class="records-period-total" id="records-period-total"></div>
+
+    </div>
+  </div>
+
+  <!-- Approval section (approvers only) -->
+  <div id="approval-section" style="display:none">
+    <div class="view-body" id="approval-container">
+      <!-- Rendered by JS -->
+    </div>
+  </div>
+</div>
+
+
+<!-- ============================================================
+     VIEW 5: ADMIN DASHBOARD
+     ============================================================ -->
+<div class="view" id="view-admin">
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-logo">⏱</div>
+    <span class="header-title">ECI 시수관리</span>
+    <span class="header-badge">관리자</span>
+    <button class="btn-logout" id="admin-logout" style="margin-left:auto">로그아웃</button>
+  </header>
+
+  <!-- Tab bar -->
+  <nav class="tab-bar" role="tablist">
+    <button class="tab-btn active" data-admin-tab="status" role="tab">현황</button>
+    <button class="tab-btn" data-admin-tab="members" role="tab">인원관리</button>
+    <button class="tab-btn" data-admin-tab="excel" role="tab">엑셀</button>
+    <button class="tab-btn" data-admin-tab="departments" role="tab">소속관리</button>
+  </nav>
+
+  <div class="admin-body">
+
+    <!-- ---- STATUS TAB ---- -->
+    <div id="admin-tab-status">
+
+      <!-- KPI Cards -->
+      <div class="kpi-grid" style="grid-template-columns: repeat(5, 1fr);">
+        <div class="kpi-card accent-blue">
+          <div class="kpi-label">총 투입 시수</div>
+          <div class="kpi-value" id="kpi-total-hours">0<span class="kpi-unit">h</span></div>
+          <div class="kpi-sub">누적 합계</div>
+        </div>
+        <div class="kpi-card accent-green">
+          <div class="kpi-label">금주 시수</div>
+          <div class="kpi-value" id="kpi-week-hours">0<span class="kpi-unit">h</span></div>
+          <div class="kpi-sub">이번 주</div>
+        </div>
+        <div class="kpi-card accent-purple">
+          <div class="kpi-label">금월 시수</div>
+          <div class="kpi-value" id="kpi-month-hours">0<span class="kpi-unit">h</span></div>
+          <div class="kpi-sub">이번 달</div>
+        </div>
+        <div class="kpi-card accent-orange">
+          <div class="kpi-label">오늘 입력</div>
+          <div class="kpi-value" id="kpi-today-input" style="font-size:1.2rem">0/0명</div>
+          <div class="kpi-sub">오늘 기록한 인원</div>
+        </div>
+        <div class="kpi-card accent-red" id="kpi-pending-card">
+          <div class="kpi-label">승인 대기</div>
+          <div class="kpi-value" id="kpi-pending-count" style="font-size:1.6rem;color:#EF4444">0<span class="kpi-unit" style="color:var(--text-secondary)">건</span></div>
+          <div class="kpi-sub">미승인 항목</div>
+        </div>
+      </div>
+
+      <!-- Member Summary Table -->
+      <div class="admin-section">
+        <div class="admin-section-header">
+          <h2>인원별 시수 현황</h2>
+          <span style="font-size:0.78rem;color:var(--text-muted)">행 클릭 시 상세 보기</span>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>직군</th>
+                <th class="num-cell">금일</th>
+                <th class="num-cell">금주</th>
+                <th class="num-cell">금월</th>
+                <th class="num-cell">누적(승인)</th>
+                <th class="num-cell">대기</th>
+                <th class="num-cell">Hourly Rate</th>
+                <th class="num-cell">누적 인건비</th>
+              </tr>
+            </thead>
+            <tbody id="member-summary-tbody">
+              <!-- Rendered by JS -->
+            </tbody>
+            <tfoot id="member-summary-tfoot">
+              <!-- Rendered by JS -->
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Status Matrix -->
+      <div class="admin-section">
+        <div class="admin-section-header">
+          <h2>상세 현황</h2>
+          <div class="view-toggle">
+            <button class="btn-toggle active" data-status-view="weekly">주간</button>
+            <button class="btn-toggle" data-status-view="monthly">월간</button>
+            <button class="btn-toggle" data-status-view="category">카테고리</button>
+          </div>
+        </div>
+        <div class="admin-table-wrap" id="status-matrix-container">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+    </div><!-- /admin-tab-status -->
+
+    <!-- ---- MEMBERS TAB ---- -->
+    <div id="admin-tab-members" style="display:none">
+      <div id="members-tab-content">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+
+    <!-- ---- EXCEL TAB ---- -->
+    <div id="admin-tab-excel" style="display:none">
+      <div id="excel-tab-content">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+
+    <!-- ---- DEPARTMENTS TAB ---- -->
+    <div id="admin-tab-departments" style="display:none">
+      <div id="departments-tab-content">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+
+  </div><!-- /admin-body -->
+</div><!-- /view-admin -->
+
+
+<!-- ============================================================
+     SIGNATURE MODAL
+     ============================================================ -->
+<div class="modal-backdrop" id="signature-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="signature-modal-title">
+  <div class="modal signature-modal">
+    <h3 id="signature-modal-title">전자서명 승인</h3>
+
+    <!-- Signature display/upload area -->
+    <div class="signature-area">
+      <!-- If signature exists: show it -->
+      <div id="signature-preview-section" style="display:none">
+        <p class="sig-label">등록된 서명</p>
+        <div class="signature-preview-box">
+          <img id="signature-preview-img" alt="서명">
+        </div>
+        <button class="btn-secondary btn-sm" id="btn-change-signature">서명 변경</button>
+      </div>
+
+      <!-- If no signature: show upload/draw options -->
+      <div id="signature-input-section">
+        <p class="sig-label">서명을 등록해주세요</p>
+        <div class="signature-tabs">
+          <button class="sig-tab active" data-sig-mode="draw">직접 그리기</button>
+          <button class="sig-tab" data-sig-mode="upload">이미지 업로드</button>
+        </div>
+
+        <!-- Draw mode -->
+        <div id="sig-draw-area">
+          <canvas id="signature-canvas" width="400" height="150"></canvas>
+          <button class="btn-secondary btn-sm" id="btn-clear-canvas" style="margin-top:6px">지우기</button>
+        </div>
+
+        <!-- Upload mode -->
+        <div id="sig-upload-area" style="display:none">
+          <input type="file" id="sig-file-input" accept="image/png,image/jpeg">
+          <div class="sig-upload-preview" id="sig-upload-preview"></div>
+        </div>
+
+        <button class="btn-submit btn-sm" id="btn-save-signature" style="margin-top:10px">서명 저장</button>
+      </div>
+    </div>
+
+    <!-- Approval summary -->
+    <div class="approval-summary" id="approval-summary"></div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="sig-modal-cancel">취소</button>
+      <button class="btn-submit" id="sig-modal-approve" disabled>이 서명으로 승인</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     REJECTION MODAL
+     ============================================================ -->
+<div class="modal-backdrop" id="rejection-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="rejection-modal-title">
+  <div class="modal">
+    <h3 id="rejection-modal-title">반려 사유</h3>
+    <textarea id="rejection-reason" class="form-control" rows="3" placeholder="반려 사유를 입력해주세요" style="margin-bottom:16px"></textarea>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="rejection-cancel">취소</button>
+      <button class="btn-danger" id="rejection-confirm">반려</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
